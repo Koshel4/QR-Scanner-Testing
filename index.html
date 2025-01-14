@@ -1,328 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>OpenCV.js “Kitchen Sink” QR Scanner</title>
+  <meta charset="UTF-8" />
+  <title>ZXing JS QR Scanner</title>
+  <script src="zxing.js"></script>
   <style>
     #videoInput {
+      width: 640px; 
+      height: 480px;
       border: 1px solid #ccc;
       background: #000;
-    }
-    canvas {
-      display: none;
     }
   </style>
 </head>
 <body>
-  <h1>OpenCV.js “Kitchen Sink” QR Scanner</h1>
-  <video id="videoInput" width="640" height="480" autoplay></video>
-  <br>
+  <h1>ZXing JS QR Scanner</h1>
 
-  <button onclick="scanQR()">Scan Once</button>
+  <video id="videoInput" autoplay muted playsinline></video>
+  <br/>
+
+  <button onclick="startScanner()">Start Scanner</button>
+  <button onclick="stopScanner()">Stop Scanner</button>
   <button onclick="switchCamera()">Switch Camera</button>
-  <button onclick="toggleContinuousScan()">Toggle Continuous Scan</button>
-  <p id="status">Awaiting camera permission...</p>
 
-  <canvas id="debugCanvas" width="640" height="480"></canvas>
+  <p id="status">Initializing...</p>
 
-  <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
   <script>
-    let video = null;
-    let streaming = false;
-    let currentStream = null;
-    let currentCameraFacing = 'environment';
+    let codeReader = null;
+    let videoInputDevices = [];
+    let currentDeviceIndex = 0;
+    let videoElem = null;
 
-    let qrDecoder = null;
-    let continuousScan = false; // Flag for continuous scanning
-    let scanningInProgress = false;
+    window.addEventListener('load', async () => {
+      videoElem = document.getElementById('videoInput');
+      document.getElementById('status').textContent = "Loading camera list...";
+      codeReader = new ZXing.BrowserMultiFormatReader();
 
-    function onOpenCvReady() {
-      console.log("OpenCV.js is ready. Initializing camera...");
-      initCamera();
-    }
+      try {
+        videoInputDevices = await codeReader.listVideoInputDevices();
 
-    function initCamera() {
-      video = document.getElementById("videoInput");
-      startCamera(currentCameraFacing);
-    }
+        if (videoInputDevices.length === 0) {
+          document.getElementById('status').textContent = 
+            "No camera device found.";
+        } else {
+          let environmentIndex = videoInputDevices.findIndex(device =>
+            device.label.toLowerCase().includes('back') ||
+            device.label.toLowerCase().includes('rear') ||
+            device.label.toLowerCase().includes('environment')
+          );
 
-    function startCamera(facingMode) {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
+          if (environmentIndex > -1) {
+            currentDeviceIndex = environmentIndex;
+          } else {
+            currentDeviceIndex = 0;
+          }
 
-      const constraints = {
-        video: { facingMode: facingMode },
-        audio: false
-      };
-
-      navigator.mediaDevices.getUserMedia(constraints)
-        .then(stream => {
-          currentStream = stream;
-          video.srcObject = stream;
-          video.play();
-          streaming = true;
-          document.getElementById("status").textContent =
-            "Camera is on. Click 'Scan Once' or enable continuous scanning.";
-        })
-        .catch(err => {
-          console.error("Camera error:", err);
-          document.getElementById("status").textContent =
-            "Failed to access camera: " + err;
-        });
-    }
-
-    function switchCamera() {
-      currentCameraFacing = (currentCameraFacing === 'environment') 
-        ? 'user' 
-        : 'environment';
-      startCamera(currentCameraFacing);
-    }
-
-    function toggleContinuousScan() {
-      continuousScan = !continuousScan;
-      document.getElementById("status").textContent = 
-        continuousScan 
-          ? "Continuous scanning ON." 
-          : "Continuous scanning OFF.";
-      if (continuousScan && !scanningInProgress) {
-        continuousScanLoop();
-      }
-    }
-
-    function continuousScanLoop() {
-      if (!continuousScan) return;
-      scanQR(true);               
-      requestAnimationFrame(continuousScanLoop);
-    }
-
-    function captureFrame() {
-      let canvas = document.getElementById("debugCanvas");
-      let ctx = canvas.getContext("2d");
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
-      srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
-      return srcMat;
-    }
-
-    function generateCandidates(srcMat) {
-
-      let candidates = [];
-
-      let gray = new cv.Mat();
-      cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
-
-      let binOtsu = new cv.Mat();
-      cv.threshold(gray, binOtsu, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
-
-      let binOtsuInv = new cv.Mat();
-      cv.threshold(gray, binOtsuInv, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
-
-      let adaptMean = new cv.Mat();
-      cv.adaptiveThreshold(
-        gray,
-        adaptMean,
-        255,
-        cv.ADAPTIVE_THRESH_MEAN_C,
-        cv.THRESH_BINARY,
-        25, // blockSize
-        10  // C
-      );
-
-      let adaptMeanInv = new cv.Mat();
-      cv.adaptiveThreshold(
-        gray,
-        adaptMeanInv,
-        255,
-        cv.ADAPTIVE_THRESH_MEAN_C,
-        cv.THRESH_BINARY_INV,
-        25,
-        10
-      );
-
-      function morphClose(mat, kSize = 3) {
-        let kernel = cv.Mat.ones(kSize, kSize, cv.CV_8U);
-        let result = new cv.Mat();
-        cv.morphologyEx(mat, result, cv.MORPH_CLOSE, kernel);
-        kernel.delete();
-        return result;
-      }
-
-      let binOtsuClosed = morphClose(binOtsu, 3);
-      let binOtsuInvClosed = morphClose(binOtsuInv, 3);
-      let adaptMeanClosed = morphClose(adaptMean, 3);
-      let adaptMeanInvClosed = morphClose(adaptMeanInv, 3);
-
-      candidates.push(binOtsuClosed);
-      candidates.push(binOtsuInvClosed);
-      candidates.push(adaptMeanClosed);
-      candidates.push(adaptMeanInvClosed);
-
-      gray.delete();
-      binOtsu.delete();
-      binOtsuInv.delete();
-      adaptMean.delete();
-      adaptMeanInv.delete();
-
-      return candidates;
-    }
-
-    function tryPerspectiveCorrection(binMat) {
-      let contours = new cv.MatVector();
-      let hierarchy = new cv.Mat();
-      cv.findContours(
-        binMat,
-        contours,
-        hierarchy,
-        cv.RETR_EXTERNAL,
-        cv.CHAIN_APPROX_SIMPLE
-      );
-
-      let bestContour = null;
-      let maxArea = 0;
-
-      for (let i = 0; i < contours.size(); i++) {
-        let cnt = contours.get(i);
-        let area = cv.contourArea(cnt);
-        if (area > maxArea) {
-          maxArea = area;
-          bestContour = cnt;
+          document.getElementById('status').textContent =
+            `Found ${videoInputDevices.length} camera(s). Ready to scan.`;
         }
+      } catch (err) {
+        console.error("Error listing video devices:", err);
+        document.getElementById('status').textContent = 
+          "Error getting camera list: " + err;
       }
+    });
 
-      if (!bestContour) {
-        contours.delete();
-        hierarchy.delete();
-        return null;
-      }
+    async function startScanner() {
+      if (!codeReader || videoInputDevices.length === 0) return;
+      await stopScanner();
 
-      let approx = new cv.Mat();
-      let perimeter = cv.arcLength(bestContour, true);
-      cv.approxPolyDP(bestContour, approx, 0.02 * perimeter, true);
+      let deviceId = videoInputDevices[currentDeviceIndex].deviceId;
+      document.getElementById('status').textContent = 
+        `Using camera: ${videoInputDevices[currentDeviceIndex].label}`;
 
-      let out = null;
-      if (approx.rows === 4) {
-        let corners = [];
-        for (let i = 0; i < 4; i++) {
-          let x = approx.data32S[i * 2];
-          let y = approx.data32S[i * 2 + 1];
-          corners.push({ x, y });
+      codeReader.decodeFromVideoDevice(deviceId, 'videoInput', (result, err) => {
+        if (result) {
+          document.getElementById('status').textContent =
+            "Decoded result: " + result.getText();
+        } else if (err && !(err instanceof ZXing.NotFoundException)) {
+          console.error(err);
+          document.getElementById('status').textContent = "Error: " + err;
         }
-        corners.sort((a, b) => (a.x + a.y) - (b.x + b.y));
-
-        let [tl, tr, bl, br] = corners;
-
-        let widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
-        let widthBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
-        let maxWidth = Math.max(widthTop, widthBottom);
-
-        let heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
-        let heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
-        let maxHeight = Math.max(heightLeft, heightRight);
-
-        let dsize = new cv.Size(maxWidth, maxHeight);
-
-        let srcTri = cv.matFromArray(
-          4,
-          1,
-          cv.CV_32FC2,
-          [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]
-        );
-        let dstTri = cv.matFromArray(
-          4,
-          1,
-          cv.CV_32FC2,
-          [0, 0, maxWidth, 0, 0, maxHeight, maxWidth, maxHeight]
-        );
-
-        let M = cv.getPerspectiveTransform(srcTri, dstTri);
-        out = new cv.Mat();
-        cv.warpPerspective(
-          binMat,
-          out,
-          M,
-          dsize,
-          cv.INTER_LINEAR,
-          cv.BORDER_CONSTANT,
-          new cv.Scalar()
-        );
-        srcTri.delete();
-        dstTri.delete();
-        M.delete();
-      }
-      approx.delete();
-      hierarchy.delete();
-      contours.delete();
-      return out;
+      });
     }
 
-    function decodeQRCode(mat) {
-      let points = new cv.Mat();
-      let straight = new cv.Mat();
-      let result = qrDecoder.detectAndDecode(mat, points, straight);
-      points.delete();
-      straight.delete();
-      return result;
+    async function stopScanner() {
+      if (codeReader) {
+        await codeReader.reset();
+        document.getElementById('status').textContent = "Scanner stopped.";
+      }
     }
 
-    function scanQR(silent = false) {
-      if (!streaming) {
-        if (!silent) {
-          document.getElementById("status").textContent =
-            "Video not streaming (camera not accessible).";
-        }
+    async function switchCamera() {
+      if (videoInputDevices.length < 2) {
+        document.getElementById('status').textContent =
+          "No secondary camera found.";
         return;
       }
-      if (scanningInProgress) return; 
-      scanningInProgress = true;
 
-      if (!qrDecoder) {
-        qrDecoder = new cv.QRCodeDetector();
-      }
+      currentDeviceIndex = (currentDeviceIndex + 1) % videoInputDevices.length;
+      document.getElementById('status').textContent =
+        `Switched camera to: ${videoInputDevices[currentDeviceIndex].label}`;
 
-      let srcMat = captureFrame();
-      let candidateMats = generateCandidates(srcMat);
-
-      let finalDecoded = "";
-      for (let i = 0; i < candidateMats.length; i++) {
-        let cMat = candidateMats[i];
-
-        let decoded = decodeQRCode(cMat);
-        if (decoded) {
-          finalDecoded = decoded;
-          break;
-        }
-
-        let warped = tryPerspectiveCorrection(cMat);
-        if (warped) {
-          let warpedDecoded = decodeQRCode(warped);
-          if (warpedDecoded) {
-            finalDecoded = warpedDecoded;
-          }
-          warped.delete();
-          if (finalDecoded) break;
-        }
-      }
-
-      candidateMats.forEach(m => m.delete());
-      srcMat.delete();
-
-      if (finalDecoded) {
-        document.getElementById("status").textContent =
-          "Decoded QR code: " + finalDecoded;
-      } else {
-        if (!silent) {
-          document.getElementById("status").textContent =
-            "No QR code detected.";
-        }
-      }
-
-      scanningInProgress = false;
+      await startScanner();
     }
   </script>
 </body>
