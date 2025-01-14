@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <title>OpenCV.js QR Scanning Prototype</title>
-  
   <style>
     #videoInput {
       border: 1px solid #ccc;
@@ -22,12 +21,14 @@
 
   <p id="status">Awaiting camera permission...</p>
 
+  <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
+
   <script>
     let video = null;
     let streaming = false;
     let qrDecoder = null;
     let currentStream = null;
-    let currentCameraFacing = 'environment'; // Default to back camera
+    let currentCameraFacing = 'environment'; // Default: back camera
 
     function onOpenCvReady() {
       console.log("OpenCV.js is ready. Initializing camera...");
@@ -35,44 +36,57 @@
     }
 
     function initCamera() {
-        video = document.getElementById("videoInput");
-        startCamera(currentCameraFacing);
+      video = document.getElementById("videoInput");
+      startCamera(currentCameraFacing);
     }
 
-
     function startCamera(facingMode) {
+      // Stop any existing stream
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
       }
-        const constraints = {
-            video: { facingMode: facingMode },
-            audio: false
-        };
 
+      const constraints = {
+        video: { facingMode: facingMode },
+        audio: false
+      };
 
-       navigator.mediaDevices.getUserMedia(constraints)
+      navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
-           currentStream = stream;
-           video.srcObject = stream;
-           video.play();
-           streaming = true;
-           document.getElementById("status").textContent = "Camera is on. Click 'Scan' to detect a QR code.";
+          currentStream = stream;
+          video.srcObject = stream;
+          video.play();
+          streaming = true;
+          document.getElementById("status").textContent 
+            = "Camera is on. Click 'Scan' to detect a QR code.";
         })
         .catch(err => {
-           console.error("An error occurred while accessing camera:", err);
-            document.getElementById("status").textContent = "Failed to access camera: " + err;
+          console.error("An error occurred while accessing camera:", err);
+          document.getElementById("status").textContent 
+            = "Failed to access camera: " + err;
         });
     }
 
     function switchCamera() {
-        currentCameraFacing = currentCameraFacing === 'environment' ? 'user' : 'environment';
-        startCamera(currentCameraFacing);
+      currentCameraFacing = (currentCameraFacing === 'environment') ? 'user' : 'environment';
+      startCamera(currentCameraFacing);
     }
-    
+
+    function preprocessFrame(srcMat) {
+      let grayMat = new cv.Mat();
+      cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
+
+      let binMat = new cv.Mat();
+      cv.threshold(grayMat, binMat, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+
+      grayMat.delete();
+      return binMat;
+    }
 
     function scanQR() {
       if (!streaming) {
-        document.getElementById("status").textContent = "Video not streaming (camera not accessible).";
+        document.getElementById("status").textContent 
+          = "Video not streaming (camera not accessible).";
         return;
       }
 
@@ -85,6 +99,8 @@
       let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
       srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
 
+      let binMat = preprocessFrame(srcMat);
+
       if (!qrDecoder) {
         qrDecoder = new cv.QRCodeDetector();
       }
@@ -92,19 +108,21 @@
       let points = new cv.Mat();
       let straightQrcode = new cv.Mat();
 
-      let decodedString = qrDecoder.detectandDecodeCurved(srcMat, points, straightQrcode);
+      let decodedString = qrDecoder.detectAndDecode(binMat, points, straightQrcode);
 
       if (decodedString) {
-        document.getElementById('status').textContent = "Decoded QR code: " + decodedString;
+        document.getElementById('status').textContent 
+          = "Decoded QR code: " + decodedString;
       } else {
-        document.getElementById('status').textContent = "No QR code detected.";
+        document.getElementById('status').textContent 
+          = "No QR code detected.";
       }
 
       srcMat.delete();
+      binMat.delete();
       points.delete();
       straightQrcode.delete();
     }
   </script>
-  <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
 </body>
 </html>
