@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>OpenCV.js QR Scanning Prototype</title>
+  
+  <script async src="https://docs.opencv.org/4.x/opencv.js" 
+          onload="onOpenCvReady()"
+          crossorigin="anonymous">
+  </script>
+  
+  <style>
+    #videoInput {
+      border: 1px solid #ccc;
+      background: #000; /* fallback if video can’t load */
+    }
+  </style>
+</head>
+<body>
+  <h1>OpenCV.js QR Scanning Prototype</h1>
+
+  <video id="videoInput" width="640" height="480" autoplay></video>
+  <br>
+
+  <button id="scanBtn" onclick="scanQR()">Scan</button>
+
+  <p id="status">Awaiting camera permission...</p>
+
+  <script>
+    let video = null;
+    let streaming = false;
+    let qrDecoder = null;
+
+    function onOpenCvReady() {
+      console.log("OpenCV.js is ready. Initializing camera...");
+      initCamera();
+    }
+
+    function initCamera() {
+      video = document.getElementById("videoInput");
+
+      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+          video.srcObject = stream;
+          video.play();
+          streaming = true;
+          document.getElementById("status").textContent = "Camera is on. Click 'Scan' to detect a QR code.";
+        })
+        .catch(err => {
+          console.error("An error occurred while accessing camera:", err);
+          document.getElementById("status").textContent = "Failed to access camera: " + err;
+        });
+    }
+
+    function scanQR() {
+      if (!streaming) {
+        document.getElementById("status").textContent = "Video not streaming (camera not accessible).";
+        return;
+      }
+
+      let canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      let ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
+      srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+
+      if (!qrDecoder) {
+        qrDecoder = new cv.QRCodeDetector();
+      }
+
+      let points = new cv.Mat();
+      let straightQrcode = new cv.Mat();
+
+      let decodedString = qrDecoder.detectAndDecode(srcMat, points, straightQrcode);
+
+      if (decodedString) {
+        document.getElementById('status').textContent = "Decoded QR code: " + decodedString;
+      } else {
+        document.getElementById('status').textContent = "No QR code detected.";
+      }
+
+      srcMat.delete();
+      points.delete();
+      straightQrcode.delete();
+    }
+  </script>
+</body>
+</html>
