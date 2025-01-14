@@ -5,10 +5,10 @@ let videoElem = null;
 
 window.addEventListener('load', async () => {
   videoElem = document.getElementById('videoInput');
-  const statusElem  = document.getElementById('status');
-  const startBtn    = document.getElementById('startBtn');
-  const stopBtn     = document.getElementById('stopBtn');
-  const switchBtn   = document.getElementById('switchBtn');
+  const statusElem = document.getElementById('status');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const switchBtn = document.getElementById('switchBtn');
   statusElem.textContent = "Загрузка списка камер...";
   codeReader = new ZXing.BrowserMultiFormatReader();
 
