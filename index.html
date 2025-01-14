@@ -1,87 +1,144 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <title>OpenCV.js QR Scanning Prototype</title>
-  
-  <style>
-    #videoInput {
-      border: 1px solid #ccc;
-      background: #000;
-    }
-  </style>
-</head>
-<body>
-  <h1>OpenCV.js QR Scanning Prototype</h1>
+	<head>
+	  <meta charset="utf-8" />
+	  <title>OpenCV.js QR Scanning Prototype</title>
+	  
+	  <style>
+		#videoInput {
+		  border: 1px solid #ccc;
+		  background: #000;
+		}
+	  </style>
+	</head>
+	<body>
+	  <h1>OpenCV.js QR Scanning Prototype</h1>
+	  
+	  <label for="cameraSelect">Select Camera:</label>
+	  <select id="cameraSelect"></select>
+	  <button id="switchBtn">Switch</button>
+	  <br><br>
 
-  <video id="videoInput" width="640" height="480" autoplay></video>
-  <br>
+	  <video id="videoInput" width="640" height="480" autoplay></video>
+	  <br><br>
 
-  <button id="scanBtn" onclick="scanQR()">Scan</button>
+	  <button id="scanBtn" onclick="scanQR()">Scan</button>
 
-  <p id="status">Awaiting camera permission...</p>
+	  <p id="status">Awaiting camera permission...</p>
 
-  <script>
-    let video = null;
-    let streaming = false;
-    let qrDecoder = null;
+	  <script>
+		let video = null;
+		let streaming = false;
+		let qrDecoder = null;
+		let currentStream = null;
 
-    function onOpenCvReady() {
-      console.log("OpenCV.js is ready. Initializing camera...");
-      initCamera();
-    }
+		function onOpenCvReady() {
+		  console.log("OpenCV.js is ready.");
+		  enumerateCameras();
+		}
 
-    function initCamera() {
-      video = document.getElementById("videoInput");
+		function enumerateCameras() {
+		  navigator.mediaDevices.enumerateDevices()
+			.then(devices => {
+			  const cameraSelect = document.getElementById("cameraSelect");
+			  cameraSelect.innerHTML = "";
 
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          video.srcObject = stream;
-          video.play();
-          streaming = true;
-          document.getElementById("status").textContent = "Camera is on. Click 'Scan' to detect a QR code.";
-        })
-        .catch(err => {
-          console.error("An error occurred while accessing camera:", err);
-          document.getElementById("status").textContent = "Failed to access camera: " + err;
-        });
-    }
+			  const videoDevices = devices.filter(d => d.kind === "videoinput");
 
-    function scanQR() {
-      if (!streaming) {
-        document.getElementById("status").textContent = "Video not streaming (camera not accessible).";
-        return;
-      }
+			  videoDevices.forEach((device, index) => {
+				const option = document.createElement("option");
+				option.value = device.deviceId;
+				option.text = device.label || `Camera ${index + 1}`;
+				cameraSelect.appendChild(option);
+			  });
 
-      let canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      let ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+			  if (videoDevices.length > 0) {
+				initCamera(videoDevices[0].deviceId);
+			  } else {
+				document.getElementById("status").textContent =
+				  "No camera devices found.";
+			  }
+			})
+			.catch(err => {
+			  console.error("Error enumerating devices:", err);
+			  document.getElementById("status").textContent =
+				"Could not access camera devices: " + err;
+			});
+		}
 
-      let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
-      srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+		function initCamera(deviceId) {
+		  video = document.getElementById("videoInput");
 
-      if (!qrDecoder) {
-        qrDecoder = new cv.QRCodeDetector();
-      }
+		  if (currentStream) {
+			currentStream.getTracks().forEach(track => track.stop());
+		  }
+		  
+		  const constraints = {
+			video: { deviceId: { exact: deviceId } },
+			audio: false
+		  };
 
-      let points = new cv.Mat();
-      let straightQrcode = new cv.Mat();
+		  navigator.mediaDevices.getUserMedia(constraints)
+			.then(stream => {
+			  currentStream = stream;
+			  video.srcObject = stream;
+			  video.play();
+			  streaming = true;
+			  document.getElementById("status").textContent =
+				"Camera is on. Click 'Scan' to detect a QR code.";
+			})
+			.catch(err => {
+			  console.error("An error occurred while accessing camera:", err);
+			  document.getElementById("status").textContent =
+				"Failed to access camera: " + err;
+			});
+		}
 
-      let decodedString = qrDecoder.detectAndDecode(srcMat, points, straightQrcode);
+		document.getElementById("switchBtn").addEventListener("click", () => {
+		  const cameraSelect = document.getElementById("cameraSelect");
+		  const deviceId = cameraSelect.value;
+		  initCamera(deviceId);
+		});
 
-      if (decodedString) {
-        document.getElementById('status').textContent = "Decoded QR code: " + decodedString;
-      } else {
-        document.getElementById('status').textContent = "No QR code detected.";
-      }
+		function scanQR() {
+		  if (!streaming) {
+			document.getElementById("status").textContent =
+			  "Video not streaming (camera not accessible).";
+			return;
+		  }
 
-      srcMat.delete();
-      points.delete();
-      straightQrcode.delete();
-    }
-  </script>
-  <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
-</body>
+		  const canvas = document.createElement('canvas');
+		  canvas.width = video.videoWidth;
+		  canvas.height = video.videoHeight;
+
+		  const ctx = canvas.getContext('2d');
+		  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+		  const srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
+		  srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+
+		  if (!qrDecoder) {
+			qrDecoder = new cv.QRCodeDetector();
+		  }
+
+		  const points = new cv.Mat();
+		  const straightQrcode = new cv.Mat();
+
+		  const decodedString = qrDecoder.detectAndDecode(srcMat, points, straightQrcode);
+
+		  if (decodedString) {
+			document.getElementById('status').textContent =
+			  "Decoded QR code: " + decodedString;
+		  } else {
+			document.getElementById('status').textContent =
+			  "No QR code detected.";
+		  }
+
+		  srcMat.delete();
+		  points.delete();
+		  straightQrcode.delete();
+		}
+	  </script>
+	  <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
+	</body>
 </html>
