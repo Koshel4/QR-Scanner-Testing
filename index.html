@@ -2,32 +2,39 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>OpenCV.js QR Scanning with Mild Warping Correction</title>
+  <title>OpenCV.js “Kitchen Sink” QR Scanner</title>
   <style>
     #videoInput {
       border: 1px solid #ccc;
       background: #000;
     }
+    canvas {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <h1>OpenCV.js QR Scanning with Mild Warping Correction</h1>
-
+  <h1>OpenCV.js “Kitchen Sink” QR Scanner</h1>
   <video id="videoInput" width="640" height="480" autoplay></video>
   <br>
 
-  <button id="scanBtn" onclick="scanQR()">Scan</button>
-  <button id="switchCameraBtn" onclick="switchCamera()">Switch Camera</button>
-
+  <button onclick="scanQR()">Scan Once</button>
+  <button onclick="switchCamera()">Switch Camera</button>
+  <button onclick="toggleContinuousScan()">Toggle Continuous Scan</button>
   <p id="status">Awaiting camera permission...</p>
+
+  <canvas id="debugCanvas" width="640" height="480"></canvas>
 
   <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
   <script>
     let video = null;
     let streaming = false;
-    let qrDecoder = null;
     let currentStream = null;
     let currentCameraFacing = 'environment';
+
+    let qrDecoder = null;
+    let continuousScan = false; // Flag for continuous scanning
+    let scanningInProgress = false;
 
     function onOpenCvReady() {
       console.log("OpenCV.js is ready. Initializing camera...");
@@ -56,7 +63,7 @@
           video.play();
           streaming = true;
           document.getElementById("status").textContent =
-            "Camera is on. Click 'Scan' to detect a QR code.";
+            "Camera is on. Click 'Scan Once' or enable continuous scanning.";
         })
         .catch(err => {
           console.error("Camera error:", err);
@@ -66,36 +73,118 @@
     }
 
     function switchCamera() {
-      currentCameraFacing = (currentCameraFacing === 'environment') ? 'user' : 'environment';
+      currentCameraFacing = (currentCameraFacing === 'environment') 
+        ? 'user' 
+        : 'environment';
       startCamera(currentCameraFacing);
     }
 
-    function preprocessFrame(srcMat) {
-      let grayMat = new cv.Mat();
-      cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
+    function toggleContinuousScan() {
+      continuousScan = !continuousScan;
+      document.getElementById("status").textContent = 
+        continuousScan 
+          ? "Continuous scanning ON." 
+          : "Continuous scanning OFF.";
+      if (continuousScan && !scanningInProgress) {
+        continuousScanLoop();
+      }
+    }
 
-      let binMat = new cv.Mat();
-      cv.threshold(grayMat, binMat, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+    function continuousScanLoop() {
+      if (!continuousScan) return;
+      scanQR(true);               
+      requestAnimationFrame(continuousScanLoop);
+    }
 
-      let kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-      cv.erode(binMat, binMat, kernel);
-      cv.dilate(binMat, binMat, kernel);
-      kernel.delete();
+    function captureFrame() {
+      let canvas = document.getElementById("debugCanvas");
+      let ctx = canvas.getContext("2d");
 
-      grayMat.delete();
-      return binMat;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
+      srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+      return srcMat;
+    }
+
+    function generateCandidates(srcMat) {
+
+      let candidates = [];
+
+      let gray = new cv.Mat();
+      cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+
+      let binOtsu = new cv.Mat();
+      cv.threshold(gray, binOtsu, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+
+      let binOtsuInv = new cv.Mat();
+      cv.threshold(gray, binOtsuInv, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+
+      let adaptMean = new cv.Mat();
+      cv.adaptiveThreshold(
+        gray,
+        adaptMean,
+        255,
+        cv.ADAPTIVE_THRESH_MEAN_C,
+        cv.THRESH_BINARY,
+        25, // blockSize
+        10  // C
+      );
+
+      let adaptMeanInv = new cv.Mat();
+      cv.adaptiveThreshold(
+        gray,
+        adaptMeanInv,
+        255,
+        cv.ADAPTIVE_THRESH_MEAN_C,
+        cv.THRESH_BINARY_INV,
+        25,
+        10
+      );
+
+      function morphClose(mat, kSize = 3) {
+        let kernel = cv.Mat.ones(kSize, kSize, cv.CV_8U);
+        let result = new cv.Mat();
+        cv.morphologyEx(mat, result, cv.MORPH_CLOSE, kernel);
+        kernel.delete();
+        return result;
+      }
+
+      let binOtsuClosed = morphClose(binOtsu, 3);
+      let binOtsuInvClosed = morphClose(binOtsuInv, 3);
+      let adaptMeanClosed = morphClose(adaptMean, 3);
+      let adaptMeanInvClosed = morphClose(adaptMeanInv, 3);
+
+      candidates.push(binOtsuClosed);
+      candidates.push(binOtsuInvClosed);
+      candidates.push(adaptMeanClosed);
+      candidates.push(adaptMeanInvClosed);
+
+      gray.delete();
+      binOtsu.delete();
+      binOtsuInv.delete();
+      adaptMean.delete();
+      adaptMeanInv.delete();
+
+      return candidates;
     }
 
     function tryPerspectiveCorrection(binMat) {
       let contours = new cv.MatVector();
       let hierarchy = new cv.Mat();
       cv.findContours(
-        binMat, contours, hierarchy,
-        cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        binMat,
+        contours,
+        hierarchy,
+        cv.RETR_EXTERNAL,
+        cv.CHAIN_APPROX_SIMPLE
       );
 
-      let maxArea = 0;
       let bestContour = null;
+      let maxArea = 0;
 
       for (let i = 0; i < contours.size(); i++) {
         let cnt = contours.get(i);
@@ -106,125 +195,134 @@
         }
       }
 
-      if (bestContour !== null) {
-        let approx = new cv.Mat();
-        let perimeter = cv.arcLength(bestContour, true);
-        cv.approxPolyDP(bestContour, approx, 0.02 * perimeter, true);
-
-        if (approx.rows === 4) {
-          let corners = [];
-          for (let i = 0; i < 4; i++) {
-            let x = approx.data32S[i * 2];
-            let y = approx.data32S[i * 2 + 1];
-            corners.push({ x, y });
-          }
-
-          corners.sort((a, b) => (a.x + a.y) - (b.x + b.y));
-          let [tl, tr, bl, br] = corners;
-
-          let widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
-          let widthBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
-          let maxWidth = Math.max(widthTop, widthBottom);
-
-          let heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
-          let heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
-          let maxHeight = Math.max(heightLeft, heightRight);
-          let dsize = new cv.Size(maxWidth, maxHeight);
-
-          let srcTri = cv.matFromArray(
-            4,
-            1,
-            cv.CV_32FC2,
-            [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]
-          );
-
-          let dstTri = cv.matFromArray(
-            4,
-            1,
-            cv.CV_32FC2,
-            [0, 0, maxWidth, 0, 0, maxHeight, maxWidth, maxHeight]
-          );
-
-          let M = cv.getPerspectiveTransform(srcTri, dstTri);
-          let warped = new cv.Mat();
-          cv.warpPerspective(
-            binMat,
-            warped,
-            M,
-            dsize,
-            cv.INTER_LINEAR,
-            cv.BORDER_CONSTANT,
-            new cv.Scalar()
-          );
-
-          srcTri.delete();
-          dstTri.delete();
-          M.delete();
-          approx.delete();
-          bestContour.delete();
-          hierarchy.delete();
-          contours.delete();
-
-          return warped;
-        }
-        approx.delete();
+      if (!bestContour) {
+        contours.delete();
+        hierarchy.delete();
+        return null;
       }
-      if (bestContour) bestContour.delete();
+
+      let approx = new cv.Mat();
+      let perimeter = cv.arcLength(bestContour, true);
+      cv.approxPolyDP(bestContour, approx, 0.02 * perimeter, true);
+
+      let out = null;
+      if (approx.rows === 4) {
+        let corners = [];
+        for (let i = 0; i < 4; i++) {
+          let x = approx.data32S[i * 2];
+          let y = approx.data32S[i * 2 + 1];
+          corners.push({ x, y });
+        }
+        corners.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+
+        let [tl, tr, bl, br] = corners;
+
+        let widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+        let widthBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
+        let maxWidth = Math.max(widthTop, widthBottom);
+
+        let heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+        let heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+        let maxHeight = Math.max(heightLeft, heightRight);
+
+        let dsize = new cv.Size(maxWidth, maxHeight);
+
+        let srcTri = cv.matFromArray(
+          4,
+          1,
+          cv.CV_32FC2,
+          [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]
+        );
+        let dstTri = cv.matFromArray(
+          4,
+          1,
+          cv.CV_32FC2,
+          [0, 0, maxWidth, 0, 0, maxHeight, maxWidth, maxHeight]
+        );
+
+        let M = cv.getPerspectiveTransform(srcTri, dstTri);
+        out = new cv.Mat();
+        cv.warpPerspective(
+          binMat,
+          out,
+          M,
+          dsize,
+          cv.INTER_LINEAR,
+          cv.BORDER_CONSTANT,
+          new cv.Scalar()
+        );
+        srcTri.delete();
+        dstTri.delete();
+        M.delete();
+      }
+      approx.delete();
       hierarchy.delete();
       contours.delete();
-	  
-      return null;
+      return out;
     }
 
-    function scanQR() {
+    function decodeQRCode(mat) {
+      let points = new cv.Mat();
+      let straight = new cv.Mat();
+      let result = qrDecoder.detectAndDecode(mat, points, straight);
+      points.delete();
+      straight.delete();
+      return result;
+    }
+
+    function scanQR(silent = false) {
       if (!streaming) {
-        document.getElementById("status").textContent =
-          "Video not streaming (camera not accessible).";
+        if (!silent) {
+          document.getElementById("status").textContent =
+            "Video not streaming (camera not accessible).";
+        }
         return;
       }
-
-      let canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      let ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
-      srcMat.data.set(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
-
-      let binMat = preprocessFrame(srcMat);
+      if (scanningInProgress) return; 
+      scanningInProgress = true;
 
       if (!qrDecoder) {
         qrDecoder = new cv.QRCodeDetector();
       }
 
-      let points = new cv.Mat();
-      let straightQrcode = new cv.Mat();
-      let decodedString = qrDecoder.detectAndDecode(binMat, points, straightQrcode);
+      let srcMat = captureFrame();
+      let candidateMats = generateCandidates(srcMat);
 
-      if (!decodedString) {
-        let warped = tryPerspectiveCorrection(binMat);
-        if (warped !== null) {
-          let points2 = new cv.Mat();
-          let straightQrcode2 = new cv.Mat();
-          decodedString = qrDecoder.detectAndDecode(warped, points2, straightQrcode2);
+      let finalDecoded = "";
+      for (let i = 0; i < candidateMats.length; i++) {
+        let cMat = candidateMats[i];
+
+        let decoded = decodeQRCode(cMat);
+        if (decoded) {
+          finalDecoded = decoded;
+          break;
+        }
+
+        let warped = tryPerspectiveCorrection(cMat);
+        if (warped) {
+          let warpedDecoded = decodeQRCode(warped);
+          if (warpedDecoded) {
+            finalDecoded = warpedDecoded;
+          }
           warped.delete();
-          points2.delete();
-          straightQrcode2.delete();
+          if (finalDecoded) break;
         }
       }
 
-      if (decodedString) {
+      candidateMats.forEach(m => m.delete());
+      srcMat.delete();
+
+      if (finalDecoded) {
         document.getElementById("status").textContent =
-          "Decoded QR code: " + decodedString;
+          "Decoded QR code: " + finalDecoded;
       } else {
-        document.getElementById("status").textContent = "No QR code detected.";
+        if (!silent) {
+          document.getElementById("status").textContent =
+            "No QR code detected.";
+        }
       }
 
-      srcMat.delete();
-      binMat.delete();
-      points.delete();
-      straightQrcode.delete();
+      scanningInProgress = false;
     }
   </script>
 </body>
