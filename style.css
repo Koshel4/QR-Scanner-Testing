@@ -57,13 +57,31 @@ body {
 
 .output-panel {
   position: absolute;
-  top: 5%;
+  bottom: 20%;
+  max-width: 80%;
+  max-height: 100px;
   background: rgba(30, 30, 30, 0.9);
   color: #fff;
   padding: 10px;
   border-radius: 8px;
   text-align: center;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  overflow: auto;
+}
+
+.output-panel::-webkit-scrollbar {
+  width: 7px;
+}
+
+.output-panel::-webkit-scrollbar-track {
+  -webkit-box-shadow: 5px 5px 5px -5px rgba(34, 60, 80, 0.2) inset;
+  background-color: #f9f9fd;
+  border-radius: 10px;
+}
+
+.output-panel::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  background: linear-gradient(180deg, #00c6fb, #005bea);
 }
 
 #status {
