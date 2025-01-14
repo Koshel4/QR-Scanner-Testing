@@ -92,7 +92,7 @@
       let points = new cv.Mat();
       let straightQrcode = new cv.Mat();
 
-      let decodedString = qrDecoder.detectAndDecode(srcMat, points, straightQrcode);
+      let decodedString = qrDecoder.detectandDecodeCurved(srcMat, points, straightQrcode);
 
       if (decodedString) {
         document.getElementById('status').textContent = "Decoded QR code: " + decodedString;
