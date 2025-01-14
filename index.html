@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>OpenCV.js QR Scanning Prototype</title>
+  <title>OpenCV.js QR Scanning with Mild Warping Correction</title>
   <style>
     #videoInput {
       border: 1px solid #ccc;
@@ -11,7 +11,7 @@
   </style>
 </head>
 <body>
-  <h1>OpenCV.js QR Scanning Prototype</h1>
+  <h1>OpenCV.js QR Scanning with Mild Warping Correction</h1>
 
   <video id="videoInput" width="640" height="480" autoplay></video>
   <br>
@@ -22,13 +22,12 @@
   <p id="status">Awaiting camera permission...</p>
 
   <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
-
   <script>
     let video = null;
     let streaming = false;
     let qrDecoder = null;
     let currentStream = null;
-    let currentCameraFacing = 'environment'; // Default: back camera
+    let currentCameraFacing = 'environment'; // 'environment' (rear) or 'user' (front)
 
     function onOpenCvReady() {
       console.log("OpenCV.js is ready. Initializing camera...");
@@ -41,7 +40,7 @@
     }
 
     function startCamera(facingMode) {
-      // Stop any existing stream
+      // Stop any existing camera stream
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
       }
@@ -57,13 +56,13 @@
           video.srcObject = stream;
           video.play();
           streaming = true;
-          document.getElementById("status").textContent 
-            = "Camera is on. Click 'Scan' to detect a QR code.";
+          document.getElementById("status").textContent =
+            "Camera is on. Click 'Scan' to detect a QR code.";
         })
         .catch(err => {
-          console.error("An error occurred while accessing camera:", err);
-          document.getElementById("status").textContent 
-            = "Failed to access camera: " + err;
+          console.error("Camera error:", err);
+          document.getElementById("status").textContent =
+            "Failed to access camera: " + err;
         });
     }
 
@@ -79,21 +78,116 @@
       let binMat = new cv.Mat();
       cv.threshold(grayMat, binMat, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
 
+      let kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+      cv.erode(binMat, binMat, kernel);
+      cv.dilate(binMat, binMat, kernel);
+      kernel.delete();
+
       grayMat.delete();
       return binMat;
     }
 
+    function tryPerspectiveCorrection(binMat) {
+      let contours = new cv.MatVector();
+      let hierarchy = new cv.Mat();
+      cv.findContours(
+        binMat, contours, hierarchy,
+        cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+      );
+
+      let maxArea = 0;
+      let bestContour = null;
+
+      for (let i = 0; i < contours.size(); i++) {
+        let cnt = contours.get(i);
+        let area = cv.contourArea(cnt);
+        if (area > maxArea) {
+          maxArea = area;
+          bestContour = cnt;
+        }
+      }
+
+      if (bestContour !== null) {
+        let approx = new cv.Mat();
+        let perimeter = cv.arcLength(bestContour, true);
+        cv.approxPolyDP(bestContour, approx, 0.02 * perimeter, true);
+
+        if (approx.rows === 4) {
+          let corners = [];
+          for (let i = 0; i < 4; i++) {
+            let x = approx.data32S[i * 2];
+            let y = approx.data32S[i * 2 + 1];
+            corners.push({ x, y });
+          }
+
+          corners.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+          let [tl, tr, bl, br] = corners;
+
+          let widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+          let widthBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
+          let maxWidth = Math.max(widthTop, widthBottom);
+
+          let heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+          let heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+          let maxHeight = Math.max(heightLeft, heightRight);
+          let dsize = new cv.Size(maxWidth, maxHeight);
+
+          let srcTri = cv.matFromArray(
+            4,
+            1,
+            cv.CV_32FC2,
+            [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y]
+          );
+
+          let dstTri = cv.matFromArray(
+            4,
+            1,
+            cv.CV_32FC2,
+            [0, 0, maxWidth, 0, 0, maxHeight, maxWidth, maxHeight]
+          );
+
+          let M = cv.getPerspectiveTransform(srcTri, dstTri);
+          let warped = new cv.Mat();
+          cv.warpPerspective(
+            binMat,
+            warped,
+            M,
+            dsize,
+            cv.INTER_LINEAR,
+            cv.BORDER_CONSTANT,
+            new cv.Scalar()
+          );
+
+          srcTri.delete();
+          dstTri.delete();
+          M.delete();
+          approx.delete();
+          bestContour.delete();
+          hierarchy.delete();
+          contours.delete();
+
+          return warped;
+        }
+        approx.delete();
+      }
+      if (bestContour) bestContour.delete();
+      hierarchy.delete();
+      contours.delete();
+	  
+      return null;
+    }
+
     function scanQR() {
       if (!streaming) {
-        document.getElementById("status").textContent 
-          = "Video not streaming (camera not accessible).";
+        document.getElementById("status").textContent =
+          "Video not streaming (camera not accessible).";
         return;
       }
 
-      let canvas = document.createElement('canvas');
+      let canvas = document.createElement("canvas");
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      let ctx = canvas.getContext('2d');
+      let ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       let srcMat = new cv.Mat(canvas.height, canvas.width, cv.CV_8UC4);
@@ -107,15 +201,25 @@
 
       let points = new cv.Mat();
       let straightQrcode = new cv.Mat();
-
       let decodedString = qrDecoder.detectAndDecode(binMat, points, straightQrcode);
 
+      if (!decodedString) {
+        let warped = tryPerspectiveCorrection(binMat);
+        if (warped !== null) {
+          let points2 = new cv.Mat();
+          let straightQrcode2 = new cv.Mat();
+          decodedString = qrDecoder.detectAndDecode(warped, points2, straightQrcode2);
+          warped.delete();
+          points2.delete();
+          straightQrcode2.delete();
+        }
+      }
+
       if (decodedString) {
-        document.getElementById('status').textContent 
-          = "Decoded QR code: " + decodedString;
+        document.getElementById("status").textContent =
+          "Decoded QR code: " + decodedString;
       } else {
-        document.getElementById('status').textContent 
-          = "No QR code detected.";
+        document.getElementById("status").textContent = "No QR code detected.";
       }
 
       srcMat.delete();
