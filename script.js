@@ -4,37 +4,38 @@ let currentDeviceIndex = 0;
 let videoElem = null;
 
 window.addEventListener('load', async () => {
-  videoElem = document.getElementById('videoInput');
-  const statusElem = document.getElementById('status');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const switchBtn = document.getElementById('switchBtn');
-  statusElem.textContent = "Загрузка списка камер...";
-  codeReader = new ZXing.BrowserMultiFormatReader();
+    videoElem = document.getElementById('videoInput');
+    const statusElem = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const switchBtn = document.getElementById('switchBtn');
+    statusElem.textContent = "Загрузка списка камер...";
+    codeReader = new ZXing.BrowserMultiFormatReader();
 
-  startBtn.addEventListener('click', startScanner);
-  stopBtn.addEventListener('click', stopScanner);
-  switchBtn.addEventListener('click', switchCamera);
+    startBtn.addEventListener('click', startScanner);
+    stopBtn.addEventListener('click', stopScanner);
+    switchBtn.addEventListener('click', switchCamera);
 
-  videoInputDevices = await codeReader.listVideoInputDevices();
-  if (videoInputDevices.length === 0) {
-    statusElem.textContent = "Камера не найдена.";
-  } else {
-    let environmentIndex = videoInputDevices.findIndex(device =>
-	  device.label.toLowerCase().includes('back') ||
-	  device.label.toLowerCase().includes('rear') ||
-	  device.label.toLowerCase().includes('environment')
-    );
-
-    if (environmentIndex > -1) {
-	  currentDeviceIndex = environmentIndex;
+    videoInputDevices = await codeReader.listVideoInputDevices();
+    if (videoInputDevices.length === 0) {
+      statusElem.textContent = "Камера не найдена.";
     } else {
-	  currentDeviceIndex = 0;
+      let environmentIndex = videoInputDevices.findIndex(device =>
+	    device.label.toLowerCase().includes('back') ||
+	    device.label.toLowerCase().includes('rear') ||
+	    device.label.toLowerCase().includes('environment')
+      );
+
+      if (environmentIndex > -1) {
+	    currentDeviceIndex = environmentIndex;
+      } else {
+	    currentDeviceIndex = 0;
+      }
+
+      statusElem.textContent = `Найдено ${videoInputDevices.length} камеры. Можно начинать сканирование.`;
     }
 
-    statusElem.textContent =
-	  `Найдено ${videoInputDevices.length} камеры. Можно начинать сканирование.`;
-  }
+    statusElem.addEventListener('dblclick', copyDecodedText);
 });
 
 async function startScanner() {
@@ -77,4 +78,25 @@ async function switchCamera() {
     `Камера изменена на: ${videoInputDevices[currentDeviceIndex].label}`;
 
   await startScanner();
+}
+
+
+function copyDecodedText() {
+  const statusElem = document.getElementById('status');
+  const text = statusElem.textContent;
+
+  const prefix = "Декодированный результат: ";
+  if (text.startsWith(prefix)) {
+    const decodedText = text.substring(prefix.length);
+    navigator.clipboard.writeText(decodedText)
+      .then(() => {
+        statusElem.textContent = "Скопировано!";
+        setTimeout(() => {
+            statusElem.textContent = text;
+        }, 2000);
+      })
+      .catch(err => {
+        console.error('Failed to copy: ', err);
+      });
+  }
 }
