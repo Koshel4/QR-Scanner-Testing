@@ -1,3 +1,4 @@
+/* Reset Styles */
 * {
   margin: 0;
   padding: 0;
@@ -8,77 +9,78 @@ body {
   font-family: Arial, sans-serif;
   background: #121212;
   color: #ffffff;
-  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.container {
-  max-width: 600px;
-  width: 90%;
-  margin: 40px auto;
-  background-color: #1e1e1e;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-  text-align: center;
-}
-
-h1 {
-  font-size: 1.8rem;
-  margin-bottom: 20px;
-  font-weight: 600;
+.scanner-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
 }
 
 #videoInput {
   width: 100%;
-  height: auto; 
-  background-color: #000;
-  border: 2px solid #333;
-  border-radius: 8px;
-  display: block;
-  margin: 0 auto;
+  height: 100%;
+  object-fit: cover;
 }
 
-.button-group {
-  margin-top: 20px;
+.button-panel {
+  display: flex;
+  justify-content: space-around;
+  background: rgba(30, 30, 30, 0.9);
+  padding: 10px;
+  position: absolute;
+  bottom: 60px;
+  left: 0;
+  right: 0;
 }
 
-.button-group button {
-  display: inline-block;
-  padding: 12px 18px;
+.button-panel button {
+  flex: 1;
   margin: 5px;
+  padding: 14px;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: bold;
   color: #fff;
-  background-color: #3f51b5;
+  background: #3f51b5;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.3s ease;
 }
 
-.button-group button:hover {
-  background-color: #303f9f;
+.button-panel button:hover {
+  background: #303f9f;
+}
+
+.output-panel {
+  text-align: center;
+  padding: 10px;
+  background: rgba(30, 30, 30, 0.9);
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
 }
 
 #status {
-  margin-top: 20px;
-  font-size: 1rem;
-  font-weight: 400;
+  font-size: 1.2rem;
   color: #ccc;
 }
 
 @media screen and (max-width: 480px) {
-  .container {
-    margin: 20px auto;
-    padding: 15px;
+  .button-panel {
+    flex-direction: column;
   }
 
-  h1 {
-    font-size: 1.5rem;
-  }
-
-  .button-group button {
-    width: 100%;
-    margin: 10px 0;
+  .button-panel button {
+    width: 90%;
+	padding: 7px;
+    margin: 5px auto;
   }
 }

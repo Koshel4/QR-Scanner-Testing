@@ -2,18 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QR Scanner</title>
   <link rel="stylesheet" href="style.css">
   <script src="zxing.js"></script>
 </head>
 <body>
-  <div class="container">
+  <div class="scanner-container">
     <video id="videoInput" autoplay muted playsinline></video>
-    <div class="button-group">
-      <button id="startBtn">Запуск сканера</button>
-      <button id="stopBtn">Остановка сканера</button>
-      <button id="switchBtn">Передняя/Задняя камера</button>
-    </div>
+  </div>
+
+  <div class="button-panel">
+    <button id="startBtn">▶ Запуск</button>
+    <button id="switchBtn">🔄 Камера</button>
+    <button id="stopBtn">⏹ Остановка</button>
+  </div>
+
+  <div class="output-panel">
     <p id="status">Инициализация...</p>
   </div>
 
