@@ -57,22 +57,13 @@ body {
 
 .output-panel {
   position: absolute;
-  bottom: 10%;
+  top: 5%;
   background: rgba(30, 30, 30, 0.9);
   color: #fff;
   padding: 10px;
   border-radius: 8px;
   text-align: center;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-  width: calc(100% - 20px);
-  max-width: 300px;
-  margin: 0 auto;
-}
-
-@supports (env(safe-area-inset-bottom)) {
-  .output-panel {
-    bottom: calc(10% + env(safe-area-inset-bottom));
-  }
 }
 
 #status {
@@ -90,6 +81,5 @@ body {
 
   .output-panel {
     font-size: 0.8rem;
-    max-width: 90%;
   }
 }
