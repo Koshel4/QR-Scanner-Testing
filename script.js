@@ -45,7 +45,7 @@ async function startScanner() {
 
   let deviceId = videoInputDevices[currentDeviceIndex].deviceId;
   statusElem.textContent =
-    `Using camera: ${videoInputDevices[currentDeviceIndex].label}`;
+    `Камера: ${videoInputDevices[currentDeviceIndex].label}`;
 
   codeReader.decodeFromVideoDevice(deviceId, 'videoInput', (result, err) => {
     if (result) {
