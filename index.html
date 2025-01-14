@@ -2,108 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ZXing JS QR Scanner</title>
+  <title>QR Scanner</title>
+  <link rel="stylesheet" href="style.css">
   <script src="zxing.js"></script>
-  <style>
-    #videoInput {
-      width: 640px; 
-      height: 480px;
-      border: 1px solid #ccc;
-      background: #000;
-    }
-  </style>
 </head>
 <body>
-  <h1>ZXing JS QR Scanner</h1>
+  <div class="container">
+    <video id="videoInput" autoplay muted playsinline></video>
+    <div class="button-group">
+      <button id="startBtn">Запуск сканера</button>
+      <button id="stopBtn">Остановка сканера</button>
+      <button id="switchBtn">Передняя/Задняя камера</button>
+    </div>
+    <p id="status">Инициализация...</p>
+  </div>
 
-  <video id="videoInput" autoplay muted playsinline></video>
-  <br/>
-
-  <button onclick="startScanner()">Start Scanner</button>
-  <button onclick="stopScanner()">Stop Scanner</button>
-  <button onclick="switchCamera()">Switch Camera</button>
-
-  <p id="status">Initializing...</p>
-
-  <script>
-    let codeReader = null;
-    let videoInputDevices = [];
-    let currentDeviceIndex = 0;
-    let videoElem = null;
-
-    window.addEventListener('load', async () => {
-      videoElem = document.getElementById('videoInput');
-      document.getElementById('status').textContent = "Loading camera list...";
-      codeReader = new ZXing.BrowserMultiFormatReader();
-
-      try {
-        videoInputDevices = await codeReader.listVideoInputDevices();
-
-        if (videoInputDevices.length === 0) {
-          document.getElementById('status').textContent = 
-            "No camera device found.";
-        } else {
-          let environmentIndex = videoInputDevices.findIndex(device =>
-            device.label.toLowerCase().includes('back') ||
-            device.label.toLowerCase().includes('rear') ||
-            device.label.toLowerCase().includes('environment')
-          );
-
-          if (environmentIndex > -1) {
-            currentDeviceIndex = environmentIndex;
-          } else {
-            currentDeviceIndex = 0;
-          }
-
-          document.getElementById('status').textContent =
-            `Found ${videoInputDevices.length} camera(s). Ready to scan.`;
-        }
-      } catch (err) {
-        console.error("Error listing video devices:", err);
-        document.getElementById('status').textContent = 
-          "Error getting camera list: " + err;
-      }
-    });
-
-    async function startScanner() {
-      if (!codeReader || videoInputDevices.length === 0) return;
-      await stopScanner();
-
-      let deviceId = videoInputDevices[currentDeviceIndex].deviceId;
-      document.getElementById('status').textContent = 
-        `Using camera: ${videoInputDevices[currentDeviceIndex].label}`;
-
-      codeReader.decodeFromVideoDevice(deviceId, 'videoInput', (result, err) => {
-        if (result) {
-          document.getElementById('status').textContent =
-            "Decoded result: " + result.getText();
-        } else if (err && !(err instanceof ZXing.NotFoundException)) {
-          console.error(err);
-          document.getElementById('status').textContent = "Error: " + err;
-        }
-      });
-    }
-
-    async function stopScanner() {
-      if (codeReader) {
-        await codeReader.reset();
-        document.getElementById('status').textContent = "Scanner stopped.";
-      }
-    }
-
-    async function switchCamera() {
-      if (videoInputDevices.length < 2) {
-        document.getElementById('status').textContent =
-          "No secondary camera found.";
-        return;
-      }
-
-      currentDeviceIndex = (currentDeviceIndex + 1) % videoInputDevices.length;
-      document.getElementById('status').textContent =
-        `Switched camera to: ${videoInputDevices[currentDeviceIndex].label}`;
-
-      await startScanner();
-    }
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>
