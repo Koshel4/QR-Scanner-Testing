@@ -27,7 +27,7 @@
     let streaming = false;
     let qrDecoder = null;
     let currentStream = null;
-    let currentCameraFacing = 'environment'; // 'environment' (rear) or 'user' (front)
+    let currentCameraFacing = 'environment';
 
     function onOpenCvReady() {
       console.log("OpenCV.js is ready. Initializing camera...");
@@ -40,7 +40,6 @@
     }
 
     function startCamera(facingMode) {
-      // Stop any existing camera stream
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
       }
