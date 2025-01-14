@@ -4,15 +4,10 @@
   <meta charset="utf-8" />
   <title>OpenCV.js QR Scanning Prototype</title>
   
-  <script async src="https://docs.opencv.org/4.x/opencv.js" 
-          onload="onOpenCvReady()"
-          crossorigin="anonymous">
-  </script>
-  
   <style>
     #videoInput {
       border: 1px solid #ccc;
-      background: #000; /* fallback if video can’t load */
+      background: #000;
     }
   </style>
 </head>
@@ -87,5 +82,6 @@
       straightQrcode.delete();
     }
   </script>
+  <script async src="opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
 </body>
 </html>
